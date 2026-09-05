@@ -4,146 +4,274 @@ const bedrock = require("bedrock-protocol");
 const app = express();
 
 const servers = [
-  { ip: "sv4.tgmc.ir", port: 29049, password: "ItzBubble" },
-  { ip: "185.26.33.12", port: 19132, password: "ItzBubble" },
-  { ip: "dreamland.falixsrv.me", port: 23110, password: "ItzBubble" }
+  {
+    host: "RLMC.ir",
+    port: 19132,
+    password: "ItzBubble"
+  },
+  {
+    host: "sv4.tgmc.ir",
+    port: 29049,
+    password: "ItzBubble"
+  },
+  {
+    host: "185.26.33.12",
+    port: 19132,
+    password: "ItzBubble"
+  },
+  {
+    host: "dreamland.falixsrv.me",
+    port: 19132,
+    password: "ItzBubble"
+  }
 ];
 
-function move(bot) {
-  setInterval(() => {
-    if (!bot.entity || !bot.entity.position) return;
+function startBot(server) {
+  let bot = null;
+  let connected = false;
+  let reconnectTimer = null;
+  let movementTimer = null;
 
-    const pos = bot.entity.position;
+  function scheduleReconnect() {
+    if (reconnectTimer) return;
+
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = null;
+
+      if (!connected) {
+        connect();
+      }
+    }, 1000);
+  }
+
+  function connect() {
+    if (connected) return;
+
+    console.log(
+      `[${server.host}:${server.port}] Connecting...`
+    );
 
     try {
-      bot.write("move_player", {
-        runtime_entity_id: bot.entity.runtime_id,
-        position: {
-          x: pos.x + 0.3,
-          y: pos.y,
-          z: pos.z
-        },
-        pitch: 0,
-        yaw: 0,
-        head_yaw: 0,
-        mode: 0,
-        on_ground: true,
-        ridden_runtime_entity_id: 0,
-        tick: BigInt(Date.now())
+      bot = bedrock.createClient({
+        host: server.host,
+        port: server.port,
+        username: "Bubble",
+        offline: true,
+        version: "1.21.50"
       });
-    } catch (e) {
-      console.log("Move error:", e.message);
+    } catch (error) {
+      console.log(
+        `[${server.host}] Create error: ${error.message}`
+      );
+
+      scheduleReconnect();
+      return;
     }
-  }, 500);
-}
 
-function connect(server) {
-  console.log(`Connecting to ${server.ip}:${server.port}`);
+    bot.on("join", () => {
+      connected = true;
 
-  const bot = bedrock.createClient({
-    host: server.ip,
-    port: server.port,
-    username: "Bubble",
-    offline: true,
-    version: "1.21.50"
-  });
+      console.log(
+        `[${server.host}] Bubble joined`
+      );
+    });
 
-  let moving = false;
+    bot.on("spawn", () => {
+      console.log(
+        `[${server.host}] Bubble spawned`
+      );
 
-  bot.on("join", () => {
-    console.log(`[${server.ip}] Joined`);
-  });
+      startMovement();
+    });
 
-  bot.on("spawn", () => {
-    console.log(`[${server.ip}] Spawned`);
-
-    if (!moving) {
-      moving = true;
-      move(bot);
-    }
-  });
-
-  bot.on("modal_form_request", (packet) => {
-    try {
-      const formId = packet.form_id ?? packet.formId;
-      const raw = packet.data ?? "";
-
-      let form;
-
+    bot.on("modal_form_request", (packet) => {
       try {
-        form = JSON.parse(raw);
-      } catch {
-        return;
+        const formId =
+          packet.form_id ??
+          packet.formId;
+
+        const raw =
+          packet.data ??
+          packet.content ??
+          "";
+
+        if (!raw) return;
+
+        const form = JSON.parse(raw);
+
+        const controls =
+          form.content ??
+          form.controls ??
+          [];
+
+        const inputs = controls.filter(
+          (item) => item.type === "input"
+        );
+
+        /*
+         * اگر فرم لاگین دو یا چند Input داشته باشد،
+         * رمز را برای Inputها ارسال می‌کند.
+         */
+        if (inputs.length >= 2) {
+          const response = [];
+
+          for (let i = 0; i < inputs.length; i++) {
+            response.push(server.password);
+          }
+
+          bot.write("modal_form_response", {
+            form_id: formId,
+            data: JSON.stringify(response),
+            cancel_reason: 0
+          });
+
+          console.log(
+            `[${server.host}] Login form submitted`
+          );
+
+          return;
+        }
+
+        /*
+         * اگر فرم یک دکمه داشته باشد،
+         * اولین دکمه انتخاب می‌شود.
+         */
+        const buttons = controls.filter(
+          (item) => item.type === "button"
+        );
+
+        if (buttons.length > 0) {
+          bot.write("modal_form_response", {
+            form_id: formId,
+            data: JSON.stringify(0),
+            cancel_reason: 0
+          });
+
+          console.log(
+            `[${server.host}] First button selected`
+          );
+        }
+
+      } catch (error) {
+        console.log(
+          `[${server.host}] Form error: ${error.message}`
+        );
       }
+    });
 
-      const fields = form.content || form.controls || [];
+    bot.on("text", (packet) => {
+      if (packet.message) {
+        console.log(
+          `[${server.host}] ${packet.message}`
+        );
+      }
+    });
 
-      const inputs = fields.filter(
-        field => field.type === "input"
+    bot.on("error", (error) => {
+      console.log(
+        `[${server.host}] Error: ${error.message}`
+      );
+    });
+
+    bot.on("disconnect", () => {
+      connected = false;
+
+      console.log(
+        `[${server.host}] Disconnected`
       );
 
-      if (inputs.length >= 2) {
-        bot.write("modal_form_response", {
-          form_id: formId,
-          data: JSON.stringify([
-            server.password,
-            server.password
-          ]),
-          cancel_reason: 0
-        });
+      stopMovement();
+      scheduleReconnect();
+    });
 
-        console.log(`[${server.ip}] Password sent`);
-        return;
-      }
+    bot.on("close", () => {
+      connected = false;
 
-      const buttons = fields.filter(
-        field =>
-          field.type === "button" ||
-          field.type === "label"
+      console.log(
+        `[${server.host}] Connection closed`
       );
 
-      if (buttons.length > 0) {
-        bot.write("modal_form_response", {
-          form_id: formId,
-          data: JSON.stringify(0),
-          cancel_reason: 0
+      stopMovement();
+      scheduleReconnect();
+    });
+  }
+
+  function startMovement() {
+    if (movementTimer) return;
+
+    movementTimer = setInterval(() => {
+      try {
+        if (!bot) return;
+        if (!connected) return;
+        if (!bot.entity) return;
+        if (!bot.entity.position) return;
+
+        const position = bot.entity.position;
+
+        bot.queue("move_player", {
+          runtime_entity_id:
+            bot.entity.runtime_id,
+
+          position: {
+            x: position.x + 0.15,
+            y: position.y,
+            z: position.z
+          },
+
+          pitch: 0,
+          yaw: 0,
+          head_yaw: 0,
+
+          mode: 0,
+
+          on_ground: true,
+
+          ridden_runtime_entity_id: 0,
+
+          tick: BigInt(Date.now())
         });
 
-        console.log(`[${server.ip}] Login button pressed`);
+      } catch (error) {
+        console.log(
+          `[${server.host}] Movement error: ${error.message}`
+        );
       }
+    }, 500);
+  }
 
-    } catch (e) {
-      console.log(`[${server.ip}] Form error: ${e.message}`);
-    }
-  });
+  function stopMovement() {
+    if (!movementTimer) return;
 
-  bot.on("disconnect", (packet) => {
-    console.log(`[${server.ip}] Disconnected`);
+    clearInterval(movementTimer);
+    movementTimer = null;
+  }
 
-    setTimeout(() => {
-      connect(server);
-    }, 3000);
-  });
-
-  bot.on("close", () => {
-    console.log(`[${server.ip}] Connection closed`);
-
-    setTimeout(() => {
-      connect(server);
-    }, 3000);
-  });
-
-  bot.on("error", (err) => {
-    console.log(`[${server.ip}] Error: ${err.message}`);
-  });
+  /*
+   * اتصال این سرور مستقل از بقیه شروع می‌شود.
+   */
+  connect();
 }
 
-servers.forEach(connect);
 
-app.get("/", (req, res) => {
-  res.send("Bubble bot is online.");
+/*
+ * هر چهار سرور هم‌زمان شروع می‌شوند.
+ */
+servers.forEach((server) => {
+  startBot(server);
 });
 
-app.listen(3000, () => {
-  console.log("Web server running on port 3000");
+
+/*
+ * Web server برای Railway
+ */
+app.get("/", (req, res) => {
+  res.status(200).send("Bubble Bot Online");
+});
+
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(
+    `Web server running on port ${PORT}`
+  );
 });
