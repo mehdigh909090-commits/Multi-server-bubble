@@ -1,5 +1,5 @@
 const express = require("express");
-const { Client } = require("bedrock-protocol");
+const bedrock = require("bedrock-protocol");
 
 const app = express();
 
@@ -41,7 +41,7 @@ function move(bot) {
 function connect(server) {
   console.log(`Connecting to ${server.ip}:${server.port}`);
 
-  const bot = Client.createClient({
+  const bot = bedrock.createClient({
     host: server.ip,
     port: server.port,
     username: "Bubble",
