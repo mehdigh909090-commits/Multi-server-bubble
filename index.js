@@ -2,7 +2,7 @@ const express = require("express");
 const app = express();
 const { Client } = require("bedrock-protocol");
 
-// ???????? ?? ???? + ??? ItzBubble
+// سرورهایی که گفتی + رمز ItzBubble
 const servers = [
   { ip: "RLMC.ir", port: 19132, password: "ItzBubble" },
   { ip: "sv4.tgmc.ir", port: 29049, password: "ItzBubble" },
@@ -10,7 +10,7 @@ const servers = [
   { ip: "dreamland.falixsrv.me", port: 19132, password: "ItzBubble" }
 ];
 
-// ???? ???????? ??? ?? ????
+// حرکت اتوماتیک بعد از ورود
 function startAutoMove(bot) {
   setInterval(() => {
     bot.write("move_player", {
@@ -30,7 +30,7 @@ function connectToServer(server) {
   const bot = Client.createClient({
     host: server.ip,
     port: server.port,
-    username: "Bubble"
+    username: "MehdiBot"
   });
 
   bot.on("spawn", () => {
@@ -42,7 +42,7 @@ function connectToServer(server) {
     const formJson = JSON.parse(packet.data);
     const fields = formJson.content;
 
-    // ????? ?: ??? + ????? ???
+    // مرحله ۱: رمز + تکرار رمز
     if (fields.length >= 2 &&
         fields[0].type === "input" &&
         fields[1].type === "input") {
@@ -56,18 +56,18 @@ function connectToServer(server) {
       return;
     }
 
-    // ????? ?: ??? ????? ???? (label + buttons)
+    // مرحله ۲: فرم نهایی ورود (label + buttons)
     if (fields.length >= 1 &&
         fields[0].type === "label") {
 
       bot.write("modal_form_response", {
         formId,
-        data: JSON.stringify(0) // ???? ??? = ????
+        data: JSON.stringify(0) // دکمه اول = ورود
       });
 
       console.log(`Pressed LOGIN button on ${server.ip}`);
 
-      // ???? ???? ???? ???????? ??? ?? ????
+      // فعال کردن حرکت اتوماتیک بعد از ورود
       startAutoMove(bot);
 
       return;
@@ -80,10 +80,10 @@ function connectToServer(server) {
   });
 }
 
-// ????? ?? ??? ??????
+// اتصال به همه سرورها
 servers.forEach(connectToServer);
 
-// ??????? ???? Render
+// وب‌سرور برای Railway
 app.get("/", (req, res) => {
   res.send("Bot is alive on multiple servers with UI login + auto move!");
 });
