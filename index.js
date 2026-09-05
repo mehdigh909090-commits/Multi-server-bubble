@@ -5,16 +5,6 @@ const app = express();
 
 const servers = [
   {
-    host: "sv4.tgmc.ir",
-    port: 29049,
-    password: "ItzBubble"
-  },
-  {
-    host: "185.26.33.12",
-    port: 19132,
-    password: "ItzBubble"
-  },
-  {
     host: "dreamland.falixsrv.me",
     port: 19132,
     password: "ItzBubble"
