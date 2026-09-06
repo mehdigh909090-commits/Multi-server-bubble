@@ -8,5 +8,7 @@
   "dependencies": {
     "express": "^4.18.2",
     "bedrock-protocol": "^3.58.3"
+    "openai": "^4.0.0",
+    "dotenv": "^16.4.0"
   }
 }
