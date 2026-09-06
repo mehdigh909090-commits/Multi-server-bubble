@@ -1,262 +1,136 @@
+require("dotenv").config();
 const express = require("express");
-const bedrock = require("bedrock-protocol");
-
 const app = express();
+const { Client } = require("bedrock-protocol");
+const OpenAI = require("openai");
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY
+});
+
+const BOT_NAME = process.env.BOT_NAME || "MehdiBot";
+const BOT_PASSWORD = process.env.BOT_PASSWORD || "ItzBubble";
 
 const servers = [
-  {
-    host: "185.26.33.12",
-    port: 19132,
-    password: "ItzBubble"
-  }
+  { ip: "185.26.33.12", port: 19132 }
 ];
 
-function startBot(server) {
-  let bot = null;
-  let connected = false;
-  let reconnectTimer = null;
-  let movementTimer = null;
+function startAutoMove(bot) {
+  setInterval(() => {
+    if (!bot.entity || !bot.entity.position) return;
 
-  function scheduleReconnect() {
-    if (reconnectTimer) return;
+    bot.write("move_player", {
+      position: {
+        x: bot.entity.position.x + 0.3,
+        y: bot.entity.position.y,
+        z: bot.entity.position.z
+      },
+      pitch: 0,
+      yaw: 0,
+      onGround: true
+    });
+  }, 800);
+}
 
-    reconnectTimer = setTimeout(() => {
-      reconnectTimer = null;
+async function getAIReply(message) {
+  try {
+    const res = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        {
+          role: "system",
+          content: "تو یک ربات ماینکرافت هستی که خیلی خودمونی جواب می‌دی."
+        },
+        {
+          role: "user",
+          content: message
+        }
+      ]
+    });
 
-      if (!connected) {
-        connect();
-      }
-    }, 1000);
+    return res.choices[0].message.content.trim();
+  } catch (e) {
+    console.error("OpenAI error:", e.message);
+    return "یه مشکلی پیش اومد، بعداً دوباره بپرس :)";
   }
+}
 
-  function connect() {
-    if (connected) return;
+function connectToServer(server) {
+  const bot = Client.createClient({
+    host: server.ip,
+    port: server.port,
+    username: BOT_NAME
+  });
 
-    console.log(
-      `[${server.host}:${server.port}] Connecting...`
-    );
+  bot.on("spawn", () => {
+    console.log(`Bot joined: ${server.ip}`);
+  });
 
-    try {
-      bot = bedrock.createClient({
-        host: server.host,
-        port: server.port,
-        username: "Bubble",
-        offline: true,
-        version: "1.21.50"
+  bot.on("modal_form_request", (packet) => {
+    const formId = packet.formId;
+    const formJson = JSON.parse(packet.data);
+    const fields = formJson.content;
+
+    if (fields.length >= 2 &&
+        fields[0].type === "input" &&
+        fields[1].type === "input") {
+
+      bot.write("modal_form_response", {
+        formId,
+        data: JSON.stringify([BOT_PASSWORD, BOT_PASSWORD])
       });
-    } catch (error) {
-      console.log(
-        `[${server.host}] Create error: ${error.message}`
-      );
 
-      scheduleReconnect();
+      console.log(`Sent password to ${server.ip}`);
       return;
     }
 
-    bot.on("join", () => {
-      connected = true;
+    if (fields.length >= 1 &&
+        fields[0].type === "label") {
 
-      console.log(
-        `[${server.host}] Bubble joined`
-      );
-    });
+      bot.write("modal_form_response", {
+        formId,
+        data: JSON.stringify(0)
+      });
 
-    bot.on("spawn", () => {
-      console.log(
-        `[${server.host}] Bubble spawned`
-      );
+      console.log(`Pressed LOGIN on ${server.ip}`);
 
-      startMovement();
-    });
+      startAutoMove(bot);
+      return;
+    }
+  });
 
-    bot.on("modal_form_request", (packet) => {
-      try {
-        const formId =
-          packet.form_id ??
-          packet.formId;
+  bot.on("text", async (packet) => {
+    const msg = packet.message;
+    const sender = packet.source_name;
 
-        const raw =
-          packet.data ??
-          packet.content ??
-          "";
+    if (sender === BOT_NAME) return;
 
-        if (!raw) return;
+    if (msg.toLowerCase().includes(BOT_NAME.toLowerCase())) {
+      const cleanMsg = msg.replace(new RegExp(BOT_NAME, "gi"), "").trim();
+      const reply = await getAIReply(cleanMsg || msg);
 
-        const form = JSON.parse(raw);
+      bot.write("text", {
+        type: "chat",
+        needs_translation: false,
+        source_name: BOT_NAME,
+        message: reply,
+        parameters: []
+      });
 
-        const controls =
-          form.content ??
-          form.controls ??
-          [];
+      console.log(`[AI] ${reply}`);
+    }
+  });
 
-        const inputs = controls.filter(
-          (item) => item.type === "input"
-        );
-
-        /*
-         * اگر فرم لاگین دو یا چند Input داشته باشد،
-         * رمز را برای Inputها ارسال می‌کند.
-         */
-        if (inputs.length >= 2) {
-          const response = [];
-
-          for (let i = 0; i < inputs.length; i++) {
-            response.push(server.password);
-          }
-
-          bot.write("modal_form_response", {
-            form_id: formId,
-            data: JSON.stringify(response),
-            cancel_reason: 0
-          });
-
-          console.log(
-            `[${server.host}] Login form submitted`
-          );
-
-          return;
-        }
-
-        /*
-         * اگر فرم یک دکمه داشته باشد،
-         * اولین دکمه انتخاب می‌شود.
-         */
-        const buttons = controls.filter(
-          (item) => item.type === "button"
-        );
-
-        if (buttons.length > 0) {
-          bot.write("modal_form_response", {
-            form_id: formId,
-            data: JSON.stringify(0),
-            cancel_reason: 0
-          });
-
-          console.log(
-            `[${server.host}] First button selected`
-          );
-        }
-
-      } catch (error) {
-        console.log(
-          `[${server.host}] Form error: ${error.message}`
-        );
-      }
-    });
-
-    bot.on("text", (packet) => {
-      if (packet.message) {
-        console.log(
-          `[${server.host}] ${packet.message}`
-        );
-      }
-    });
-
-    bot.on("error", (error) => {
-      console.log(
-        `[${server.host}] Error: ${error.message}`
-      );
-    });
-
-    bot.on("disconnect", () => {
-      connected = false;
-
-      console.log(
-        `[${server.host}] Disconnected`
-      );
-
-      stopMovement();
-      scheduleReconnect();
-    });
-
-    bot.on("close", () => {
-      connected = false;
-
-      console.log(
-        `[${server.host}] Connection closed`
-      );
-
-      stopMovement();
-      scheduleReconnect();
-    });
-  }
-
-  function startMovement() {
-    if (movementTimer) return;
-
-    movementTimer = setInterval(() => {
-      try {
-        if (!bot) return;
-        if (!connected) return;
-        if (!bot.entity) return;
-        if (!bot.entity.position) return;
-
-        const position = bot.entity.position;
-
-        bot.queue("move_player", {
-          runtime_entity_id:
-            bot.entity.runtime_id,
-
-          position: {
-            x: position.x + 0.15,
-            y: position.y,
-            z: position.z
-          },
-
-          pitch: 0,
-          yaw: 0,
-          head_yaw: 0,
-
-          mode: 0,
-
-          on_ground: true,
-
-          ridden_runtime_entity_id: 0,
-
-          tick: BigInt(Date.now())
-        });
-
-      } catch (error) {
-        console.log(
-          `[${server.host}] Movement error: ${error.message}`
-        );
-      }
-    }, 500);
-  }
-
-  function stopMovement() {
-    if (!movementTimer) return;
-
-    clearInterval(movementTimer);
-    movementTimer = null;
-  }
-
-  /*
-   * اتصال این سرور مستقل از بقیه شروع می‌شود.
-   */
-  connect();
+  bot.on("close", () => {
+    console.log(`Disconnected from ${server.ip}, reconnecting...`);
+    setTimeout(() => connectToServer(server), 3000);
+  });
 }
 
+servers.forEach(connectToServer);
 
-/*
- * هر چهار سرور هم‌زمان شروع می‌شوند.
- */
-servers.forEach((server) => {
-  startBot(server);
-});
-
-
-/*
- * Web server برای Railway
- */
 app.get("/", (req, res) => {
-  res.status(200).send("Bubble Bot Online");
+  res.send("AI Bedrock bot is online.");
 });
 
-const PORT = process.env.PORT || 3000;
-
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(
-    `Web server running on port ${PORT}`
-  );
-});
+app.listen(3000);
