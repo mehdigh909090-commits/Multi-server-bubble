@@ -5,8 +5,8 @@ const app = express();
 
 const servers = [
   {
-    host: "dreamlanddl.falixsrv.me",
-    port: 23110,
+    host: "185.26.33.12",
+    port: 19132,
     password: "ItzBubble"
   }
 ];
