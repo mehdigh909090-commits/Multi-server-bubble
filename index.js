@@ -13,7 +13,7 @@ const BOT_PASSWORD = process.env.BOT_PASSWORD || "ItzBubble";
 
 // سرورها
 const servers = [
-  { ip: "185.26.33.12", port: 19132 }
+  { ip: "dreamlandld.aternos.me", port: 54541 }
   ]
 // حرکت اتوماتیک با تأخیر
 function startAutoMove(bot) {
